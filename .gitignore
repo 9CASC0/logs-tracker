@@ -1,0 +1,28 @@
+# Binaries
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Secrets & Keys
+*.enc
+keys/
+keys.tmp.enc
+
+# Local WORM directories
+worm-storage/
+worm-dev/
+worm-staging/
+worm-prod/
+
+# Test artifacts
+*.test
+*.out
+*.prof
+
+# IDE
+.idea/
+.vscode/
+*.swp

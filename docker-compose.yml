@@ -1,0 +1,108 @@
+version: '3.8'
+
+services:
+  mysql:
+    image: mysql:8.0
+    command: >
+      --server-id=1
+      --log-bin=mysql-bin
+      --binlog-format=ROW
+      --binlog-row-image=FULL
+      --gtid-mode=ON
+      --enforce-gtid-consistency=ON
+      --default-authentication-plugin=mysql_native_password
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: app
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./migrations/mysql:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: auditlog
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./migrations/postgres:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d auditlog"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  auditlogd:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.daemon
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: root
+      MYSQL_PASSWORD: root
+      MYSQL_DATABASE: app
+      MYSQL_SERVER_ID: 1001
+      POSTGRES_URL: postgres://postgres:postgres@postgres:5432/auditlog?sslmode=disable
+      WORM_DIR: /data/worm-storage
+      KEYFILE_PATH: /keys/keys.enc
+      KEYFILE_PASSPHRASE: ${KEYFILE_PASSPHRASE:-local-dev-passphrase}
+      ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL:-}
+    volumes:
+      - ./worm-storage:/data/worm-storage
+      - ./keys:/keys
+    depends_on:
+      mysql:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  apiserver:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.apiserver
+    environment:
+      POSTGRES_URL: postgres://postgres:postgres@postgres:5432/auditlog?sslmode=disable
+      KEYFILE_PATH: /keys/keys.enc
+      KEYFILE_PASSPHRASE: ${KEYFILE_PASSPHRASE:-local-dev-passphrase}
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-admin-secret-token}
+      APP_TOKEN: ${APP_TOKEN:-app-service-token}
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./keys:/keys:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  tiering:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.tiering
+    environment:
+      POSTGRES_URL: postgres://postgres:postgres@postgres:5432/auditlog?sslmode=disable
+      WORM_DIR: /data/worm-storage
+      ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL:-}
+    volumes:
+      - ./worm-storage:/data/worm-storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles:
+      - cron
+
+volumes:
+  mysql_data:
+  postgres_data:
