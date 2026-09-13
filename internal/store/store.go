@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 
@@ -583,6 +584,9 @@ func (m *MemoryStore) GetRecordsByBatchID(ctx context.Context, batchID string) (
 			res = append(res, &rCopy)
 		}
 	}
+	sort.Slice(res, func(i, j int) bool {
+		return res[i].MerkleLeafIndex < res[j].MerkleLeafIndex
+	})
 	return res, nil
 }
 
@@ -654,6 +658,9 @@ func (m *MemoryStore) GetRecordForVerification(ctx context.Context, recordID str
 			allRecords = append(allRecords, r)
 		}
 	}
+	sort.Slice(allRecords, func(i, j int) bool {
+		return allRecords[i].MerkleLeafIndex < allRecords[j].MerkleLeafIndex
+	})
 
 	var allLeaves [][]byte
 	for _, r := range allRecords {
