@@ -32,6 +32,16 @@ func (s *Server) registerRoutes() {
 	// Health check (unauthenticated)
 	s.mux.HandleFunc("/health", s.handler.HealthHandler)
 
+	// Interactive Web Verification Portal (unauthenticated)
+	s.mux.HandleFunc("/verify", s.handler.PortalHandler)
+	s.mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/" {
+			s.handler.PortalHandler(w, r)
+			return
+		}
+		http.NotFound(w, r)
+	})
+
 	// Public Verification Feed (unauthenticated, decoupled from internal auth)
 	s.mux.HandleFunc("/public/verification/keys", s.handler.PublicKeysHandler)
 	s.mux.HandleFunc("/public/verification/roots", s.handler.PublicRootsHandler)

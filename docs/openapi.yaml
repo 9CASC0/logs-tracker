@@ -1,0 +1,233 @@
+openapi: 3.0.3
+info:
+  title: Global Audit Logger (`auditlogd`) API
+  description: >
+    Production-grade, tamper-evident audit logging API with Merkle tree verification,
+    Ed25519 digital signatures, and transparent public dispute verification feeds.
+  version: 1.0.0
+servers:
+  - url: http://localhost:8080
+    description: Local API Server
+paths:
+  /health:
+    get:
+      summary: Health check
+      description: Returns service liveness status and current server timestamp.
+      responses:
+        '200':
+          description: Service is healthy.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "ok"
+                  time:
+                    type: string
+                    format: date-time
+
+  /audit/records:
+    get:
+      summary: Query audit history for a record
+      description: Returns historical change events for a specific row in an audited table. Requires `record:read` permission.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: table
+          in: query
+          required: true
+          schema:
+            type: string
+            example: "users"
+        - name: primary_key
+          in: query
+          required: true
+          schema:
+            type: string
+            example: "42"
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: Matching audit records.
+        '401':
+          description: Unauthorized.
+        '403':
+          description: Forbidden (insufficient permission).
+
+  /audit/records/{id}:
+    get:
+      summary: Retrieve single audit record detail
+      description: Returns full record snapshot. Supports `?decrypt=true` for authorized callers to decrypt PII fields.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: decrypt
+          in: query
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: Record details.
+        '404':
+          description: Record not found.
+
+  /audit/records/{id}/verify:
+    get:
+      summary: Cryptographic dispute verification
+      description: Reconstructs Merkle proof, verifies against the batch's signed root, and asserts Ed25519 signature validity.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Cryptographic verification result.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  valid:
+                    type: boolean
+                  record_id:
+                    type: string
+                  batch_id:
+                    type: string
+                  merkle_root_hex:
+                    type: string
+                  signature_hex:
+                    type: string
+                  key_version:
+                    type: string
+                  verified_at:
+                    type: string
+                    format: date-time
+
+  /audit/batches/{id}:
+    get:
+      summary: Get batch metadata
+      description: Retrieves batch details including Merkle root, Ed25519 signature, status, and binlog checkpoint.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Batch metadata.
+
+  /audit/config:
+    get:
+      summary: View active audit configurations
+      description: Lists all tables registered for audit along with policies and encryption settings.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: List of table audit configurations.
+
+  /audit/alerts/{id}/ack:
+    post:
+      summary: Acknowledge security alert
+      description: Marks a security alert as acknowledged by on-call or security personnel.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Alert acknowledged.
+
+  /public/verification/keys:
+    get:
+      summary: Published public signing keys
+      description: Public, unauthenticated endpoint exposing the active and historical Ed25519 public keys for zero-trust verification.
+      responses:
+        '200':
+          description: Public keys.
+
+  /public/verification/roots:
+    get:
+      summary: Published signed Merkle roots history
+      description: Public feed of all historical batch Merkle roots, signatures, and time ranges (no underlying data).
+      responses:
+        '200':
+          description: List of published signed roots.
+
+  /public/verification/verify:
+    post:
+      summary: Zero-trust proof verification
+      description: Pure verification engine checking that provided record data and Merkle path hash mathematically into a signed root.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - record
+                - proof
+                - merkle_root_hex
+                - signature_hex
+                - key_version
+              properties:
+                record:
+                  type: object
+                proof:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      hash:
+                        type: string
+                      is_left:
+                        type: boolean
+                merkle_root_hex:
+                  type: string
+                signature_hex:
+                  type: string
+                key_version:
+                  type: string
+                public_key_base64:
+                  type: string
+      responses:
+        '200':
+          description: Verification outcome.
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: Token
