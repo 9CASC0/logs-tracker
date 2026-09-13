@@ -21,6 +21,7 @@ worm-prod/
 *.test
 *.out
 *.prof
+coverage*
 
 # IDE
 .idea/
